@@ -89,7 +89,7 @@ seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=T, v
  DADA2 uses naive Bayesian classifier method for this purpose. The assignTaxonomy function takes as input a set of sequences to be classified and a training set of reference sequences with known taxonomy, and outputs taxonomic assignments with at least minBoot bootstrap confidence.
 
 ```{r}
-taxa <- assignTaxonomy(seqtab.nochim, "~/tax/rdp_train_set_14.fa.gz"), multithread=T)  
+taxa <- assignTaxonomy(seqtab.nochim, "~/tax/rdp_train_set_14.fa.gz", multithread=T)  
 #Dowload a training set from RDP/UNITE databases(reference data) to your directory
 ```
 # Fitting Data to get Phylogenetic tree in data object
@@ -108,7 +108,7 @@ dm <- dist.ml(phang.align)
 treeNJ <- NJ(dm)
 fit = pml(treeNJ, data=phang.align)
 fitGTR <- update(fit, k=4, inv=0.2)
-fitGTR <- optim.pml(fitGTR, model="GTR", optInv=TRUE, optGamma=TRUE,
+fitGTR <- optim.pml(fitGTR, model="GTR", optInv=TRUE, optGamma=T,
                     rearrangement = "stochastic", control = pml.control(trace = 0))
 
 #Convert the seqtab into Phyloseq object for data visualization
@@ -123,6 +123,6 @@ mapfile <- mapfile[rownames(seqtab), keep.cols]
 
 #Now get the phyloseq object-
 ps <- phyloseq(tax_table(taxa), sample_data(mapfile),
-               otu_table(seqtab, taxa_are_rows = FALSE))
+               otu_table(seqtab, taxa_are_rows = F))
 ```
 # Follow phyloseq tutorial for downstream analysis.
