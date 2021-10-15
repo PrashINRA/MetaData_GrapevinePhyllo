@@ -1,7 +1,7 @@
 # Microbiome Data Analysis MetaData_GrapevinePhyllo
 This repository consit of the meta-data file concerning the informations regarding the samples collected from different grapvevine cultivars
 (9 cultivatrs, 3 genetic pools and two organ types), published here https://pubmed.ncbi.nlm.nih.gov/30248973/.
-Also illustrate the whole data analysis procedure from FASTQ files to Unsupervised clustering and Hypothesis testing in R.
+Also illustrate the whole data analysis procedure from FASTQ files to Unsupervised clustering and Hypothesis testing in R. Datasets consist 2x250 16S_V4/ITS sequence data.
 
 # Load Packages:
 ```{r}
@@ -44,7 +44,7 @@ rownames(out)<- basename(filtFs)
 
 #if filtering is already done and the filtered files are in folder then reach them by this:
  
- filtS <- sort(list.files(filt_path, full.names = TRUE))
+filtS <- sort(list.files(filt_path, full.names = TRUE))
 filtFs <- filtS[grepl("R1", filtS)]
 filtRs <- filtS[grepl("R2", filtS)]
 sample.names <- sapply(strsplit(basename(filtFs), "_"), `[`, 2)
@@ -54,4 +54,75 @@ names(filtFs) <- sample.names
 names(filtRs) <- sample.names
 
 ```
+# Learn Error rates
+The DADA2 algorithm uses a parametric error model and every amplicon dataset has a different set of error rates. The learnErrors method learns this error model from the data, by alternating estimation of the error rates and inference of sample composition until they converge on a jointly consistent solution. As in many machine-learning problems, the algorithm must begin with an initial guess, for which the maximum possible error rates in this data are used (the error rates if only the most abundant sequence is correct and all the rest are errors).
 
+```{r}
+errF <- learnErrors(filtFs, multithread=TRUE)
+errR <- learnErrors(filtRs, multithread=TRUE)
+#To visualize estimated error rates
+plotErrors(errF, nominalQ=TRUE) 
+#This will show The error rates for each possible transition (A→C, A→G etc.).
+If the learned error rates are merging with observed error rates, it is reasonable to go ahead.
+```
+# Sample Inference
+
+```{r}
+dadaFs <- dada(filtFs, err=errF, multithread=T)
+dadaFs <- dada(filtRs, err=errR, multithread=T)
+#Now we canmerge the forward and reverse reads together to obtain the full denoised sequences. 
+#Merging is performed by aligning the denoised forward reads with the reverse-complement of the corresponding denoised reverse reads, 
+#and then constructing the merged “contig” sequences. 
+#By default, merged sequences are only output if the forward and reverse reads overlap by at least 12 bases, and are identical to each other in the overlap #region (but these conditions can be changed via function arguments).
+
+mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
+```
+
+# Construct sequence table
+Now, we can construct an amplicon sequence variant table (ASV) table, a higher-resolution version of the OTU table.
+
+```{r}
+seqtab <- makeSequenceTable(mergers)
+seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=T, verbose=T) #Remove chimeras
+```
+# Assign taxonomy
+ DADA2 uses naive Bayesian classifier method for this purpose. The assignTaxonomy function takes as input a set of sequences to be classified and a training set of reference sequences with known taxonomy, and outputs taxonomic assignments with at least minBoot bootstrap confidence.
+
+```{r}
+taxa <- assignTaxonomy(seqtab.nochim, "~/tax/rdp_train_set_14.fa.gz"), multithread=T)  
+#Dowload a training set from RDP/UNITE databases(reference data) to your directory
+```
+# Fitting Data to get Phylogenetic tree in data object
+
+```{r}
+
+```
+
+```{r}
+library(ape)
+fseqs <- getSequences(fseqtab)
+names(fseqs) <- fseqs
+alignment <- AlignSeqs(DNAStringSet(fseqs), anchor=NA)
+phang.align <- phyDat(as(alignment, "matrix"), type = "DNA")
+dm <- dist.ml(phang.align)
+treeNJ <- NJ(dm)
+fit = pml(treeNJ, data=phang.align)
+fitGTR <- update(fit, k=4, inv=0.2)
+fitGTR <- optim.pml(fitGTR, model="GTR", optInv=TRUE, optGamma=TRUE,
+                    rearrangement = "stochastic", control = pml.control(trace = 0))
+
+#Convert the seqtab into Phyloseq object for data visualization
+
+rownames(taxa)<- paste0("OTU", 1:nrow(taxa))
+colnames(seqtab)<- paste0("OTU", 1:ncol(seqtab))
+mapfile = read.xls("16s.xlsx", sheet = 1, header = TRUE) # Load Metadata to map your results
+all(rownames(seqtab) %in% mapfile$SampleId)
+keep.cols <- c("SampleId", "Genetic_Pool", "Region", "Sample_Type", "Cultivar_Name", "Block", "Sampling_Time")
+rownames(mapfile) <- mapfile$SampleId
+mapfile <- mapfile[rownames(seqtab), keep.cols]
+
+#Now get the phyloseq object-
+ps <- phyloseq(tax_table(taxa), sample_data(mapfile),
+               otu_table(seqtab, taxa_are_rows = FALSE))
+```
+# Follow phyloseq tutorial for downstream analysis.
